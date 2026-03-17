@@ -1,0 +1,88 @@
+{
+  "name": "Blueprint Chat — Lead Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "blueprint-chat-lead",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson"
+      },
+      "id": "webhook-trigger",
+      "name": "Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "blueprint-chat-lead"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.body.event }}",
+              "operation": "equal",
+              "value2": "lead.captured"
+            }
+          ]
+        }
+      },
+      "id": "if-lead-captured",
+      "name": "Is Lead Captured?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "content": "=**New Lead** for **{{ $json.body.lead.tenantId }}**\n\n👤 {{ $json.body.lead.name }}\n📧 {{ $json.body.lead.email }}\n📞 {{ $json.body.lead.phone || 'N/A' }}\n🔗 {{ $json.body.lead.sourceUrl || 'Direct' }}\n\n_{{ $json.body.lead.sessionSummary || 'No summary available' }}_\n\n📅 {{ $json.body.lead.capturedAt }}"
+      },
+      "id": "discord-notification",
+      "name": "Discord Notification",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [680, 240],
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "discord-webhook-credentials",
+          "name": "Blueprint Discord Webhook"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.PIPELINE_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}"
+      },
+      "id": "pipeline-webhook",
+      "name": "Forward to Lead Pipeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [680, 380],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Lead Webhook": {
+      "main": [
+        [{ "node": "Is Lead Captured?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Is Lead Captured?": {
+      "main": [
+        [
+          { "node": "Discord Notification", "type": "main", "index": 0 },
+          { "node": "Forward to Lead Pipeline", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": ["blueprint-chat", "leads"]
+}

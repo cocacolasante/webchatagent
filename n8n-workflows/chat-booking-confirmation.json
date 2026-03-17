@@ -1,0 +1,64 @@
+{
+  "name": "Blueprint Chat — Booking Confirmation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "blueprint-chat-booking",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson"
+      },
+      "id": "webhook-trigger",
+      "name": "Booking Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "blueprint-chat-booking"
+    },
+    {
+      "parameters": {
+        "content": "=**Appointment Booked** via Blueprint Chat\n\n👤 {{ $json.body.appointment.attendeeName }}\n📧 {{ $json.body.appointment.attendeeEmail }}\n📅 {{ $json.body.appointment.startTime }}\n🏢 Tenant: {{ $json.body.tenantId }}\n\n{{ $json.body.appointment.meetingUrl ? '🎥 ' + $json.body.appointment.meetingUrl : '' }}\n{{ $json.body.appointment.confirmUrl ? '🔗 ' + $json.body.appointment.confirmUrl : '' }}"
+      },
+      "id": "discord-notification",
+      "name": "Discord Confirmation",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [460, 240],
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "discord-webhook-credentials",
+          "name": "Blueprint Discord Webhook"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.CRM_WEBHOOK_URL }}",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify({ event: 'appointment.booked', data: $json.body }) }}"
+      },
+      "id": "crm-update",
+      "name": "Update CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 380],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Booking Webhook": {
+      "main": [
+        [
+          { "node": "Discord Confirmation", "type": "main", "index": 0 },
+          { "node": "Update CRM", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "saveManualExecutions": true
+  },
+  "tags": ["blueprint-chat", "booking"]
+}

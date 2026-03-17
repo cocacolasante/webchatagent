@@ -1,0 +1,90 @@
+{
+  "name": "Blueprint Chat — Daily Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Daily 8am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BLUEPRINT_CHAT_API_BASE }}/api/admin/tenants",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Blueprint-Admin-Key", "value": "={{ $env.BLUEPRINT_ADMIN_KEY }}" }
+          ]
+        }
+      },
+      "id": "fetch-tenants",
+      "name": "Fetch All Tenants",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BLUEPRINT_CHAT_API_BASE }}/api/health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Blueprint-Admin-Key", "value": "={{ $env.BLUEPRINT_ADMIN_KEY }}" }
+          ]
+        }
+      },
+      "id": "fetch-health",
+      "name": "Fetch System Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 440]
+    },
+    {
+      "parameters": {
+        "content": "=📊 **Blueprint Chat Daily Digest** — {{ new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }) }}\n\n🏢 **Active Tenants:** {{ $node['Fetch All Tenants'].json.tenants?.filter(t => t.isActive).length || 0 }}\n🔧 **System Status:** {{ $node['Fetch System Health'].json.status === 'ok' ? '✅ Healthy' : '⚠️ Degraded' }}\n\n_Generated automatically by Blueprint Chat_"
+      },
+      "id": "discord-digest",
+      "name": "Discord Digest",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [680, 360],
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "discord-webhook-credentials",
+          "name": "Blueprint Discord Webhook"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 8am": {
+      "main": [
+        [
+          { "node": "Fetch All Tenants", "type": "main", "index": 0 },
+          { "node": "Fetch System Health", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Fetch All Tenants": {
+      "main": [
+        [{ "node": "Discord Digest", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "saveManualExecutions": false
+  },
+  "tags": ["blueprint-chat", "digest"]
+}

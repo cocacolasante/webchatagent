@@ -1,0 +1,95 @@
+{
+  "name": "Blueprint Chat — Tenant Provisioning (APS)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "blueprint-chat-provision",
+        "responseMode": "onReceived",
+        "responseData": "firstEntryJson"
+      },
+      "id": "webhook-trigger",
+      "name": "APS Purchase Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "blueprint-chat-provision"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.BLUEPRINT_CHAT_API_BASE }}/api/admin/tenants",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Blueprint-Admin-Key", "value": "={{ $env.BLUEPRINT_ADMIN_KEY }}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $json.body.businessName, botName: $json.body.botName || 'Assistant', greeting: $json.body.greeting || 'Hi! How can I help you today?', leadCaptureEnabled: true }) }}"
+      },
+      "id": "create-tenant",
+      "name": "Create Tenant via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "content": "=🚀 **New Blueprint Chat client!**\n\n🏢 {{ $json.body.businessName }}\n📧 {{ $json.body.email }}\n\n**Tenant ID:** {{ $node['Create Tenant via API'].json.tenant.id }}\n**Embed Code:**\n```\n{{ $node['Create Tenant via API'].json.embedCode }}\n```"
+      },
+      "id": "discord-announcement",
+      "name": "Internal Discord Announcement",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 1,
+      "position": [680, 240],
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "discord-webhook-credentials",
+          "name": "Blueprint Discord Webhook"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "onboarding@blueprintautomation.tech",
+        "toEmail": "={{ $json.body.email }}",
+        "subject": "Your Blueprint Chat is Ready! Here's How to Install It",
+        "text": "=Hi {{ $json.body.contactName || $json.body.businessName }},\n\nYour Blueprint Chat AI assistant is ready to go!\n\n--- YOUR EMBED CODE ---\n{{ $node['Create Tenant via API'].json.embedCode }}\n-----------------------\n\nHow to install:\n1. Copy the code above\n2. Paste it before </body> on your website\n3. That's it — your AI chat will appear within seconds!\n\nFor WordPress: Use 'Insert Headers and Footers' plugin\nFor Squarespace: Settings → Advanced → Code Injection\nFor Shopify: Online Store → Themes → Edit Code → theme.liquid\n\nAdmin Dashboard: {{ $env.ADMIN_DASHBOARD_URL }}\nTenant ID: {{ $node['Create Tenant via API'].json.tenant.id }}\n\nNeed help? Reply to this email or message us on Discord.\n\n— Blueprint Automation Team"
+      },
+      "id": "onboarding-email",
+      "name": "Onboarding Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [680, 380],
+      "continueOnFail": true,
+      "credentials": {
+        "smtp": {
+          "id": "smtp-credentials",
+          "name": "Blueprint SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "APS Purchase Webhook": {
+      "main": [
+        [{ "node": "Create Tenant via API", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Tenant via API": {
+      "main": [
+        [
+          { "node": "Internal Discord Announcement", "type": "main", "index": 0 },
+          { "node": "Onboarding Email", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "saveManualExecutions": true
+  },
+  "tags": ["blueprint-chat", "provisioning", "aps"]
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/blueprintautomation/blueprint-chat/internal/api"
 	"github.com/blueprintautomation/blueprint-chat/internal/api/handlers"
+	"github.com/blueprintautomation/blueprint-chat/internal/billing"
 	mw "github.com/blueprintautomation/blueprint-chat/internal/api/middleware"
 	"github.com/blueprintautomation/blueprint-chat/internal/chat"
 	"github.com/blueprintautomation/blueprint-chat/internal/config"
@@ -90,6 +91,7 @@ func main() {
 
 	tenantSvc := tenant.NewService(pgPool, cfg.EncryptionKey, log)
 	tenantProv := tenant.NewProvisioner(tenantSvc, cfg.BaseURL)
+	billingClient := billing.NewTenantLimitClient(cfg.PortalsURL, cfg.BPAInternalKey)
 
 	emailSender := notification.NewEmailSender(
 		cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass,
@@ -103,7 +105,7 @@ func main() {
 	rateLimiter := mw.NewRateLimiter(redisClient, log)
 
 	// Initialize handlers
-	tenantsHandler := handlers.NewTenantsHandler(tenantSvc, tenantProv, log)
+	tenantsHandler := handlers.NewTenantsHandler(tenantSvc, tenantProv, log, billingClient)
 	chatHandler := handlers.NewChatHandler(chatEngine, cfg.EncryptionKey, log)
 	leadsHandler := handlers.NewLeadsHandler(leadSvc, log)
 	bookingHandler := handlers.NewBookingHandler(cfg.CalComAPIBase, cfg.CalendlyAPIBase, cfg.EncryptionKey, log)

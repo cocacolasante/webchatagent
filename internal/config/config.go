@@ -62,6 +62,10 @@ type Config struct {
 	// Widget
 	WidgetBundlePath string
 	WidgetMaxSizeKB  int
+
+	// Blueprint Command billing
+	PortalsURL     string
+	BPAInternalKey string
 }
 
 func Load() (*Config, error) {
@@ -93,6 +97,8 @@ func Load() (*Config, error) {
 		WidgetBundlePath:      getEnv("WIDGET_BUNDLE_PATH", "./widget/dist/widget.js"),
 		WidgetMaxSizeKB:       getEnvInt("WIDGET_MAX_SIZE_KB", 50),
 		AnthropicMaxTokens:    getEnvInt("ANTHROPIC_MAX_TOKENS", 1024),
+		PortalsURL:            getEnv("PORTALS_URL", ""),
+		BPAInternalKey:        getEnv("BPA_INTERNAL_KEY", ""),
 	}
 
 	// Required fields — fail fast

@@ -196,8 +196,9 @@ func (s *Service) Create(ctx context.Context, req CreateTenantRequest) (*Tenant,
 			scheduler_type, scheduler_config,
 			lead_capture_enabled, lead_form_config, lead_webhook_url, lead_notify_email,
 			discord_webhook_url,
-			partner_id, managed_by, client_id
-		) VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+			partner_id, managed_by, client_id,
+			portals_instance_id
+		) VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
 		RETURNING id`,
 		apiKey, req.Name, plan,
 		botName, req.SchedulerConfig.APIKey, primaryColor, greeting, position,
@@ -206,6 +207,7 @@ func (s *Service) Create(ctx context.Context, req CreateTenantRequest) (*Tenant,
 		req.LeadCaptureEnabled, leadFormJSON, req.LeadWebhookURL, req.LeadNotifyEmail,
 		req.DiscordWebhookURL,
 		req.PartnerID, managedBy, req.ClientID,
+		req.PortalsInstanceID,
 	).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("insert tenant: %w", err)
@@ -252,6 +254,13 @@ func (s *Service) Update(ctx context.Context, id string, req UpdateTenantRequest
 	}
 
 	return s.GetByID(ctx, id)
+}
+
+// GetPortalsInstanceID returns the portals_instance_id for a tenant.
+func (s *Service) GetPortalsInstanceID(ctx context.Context, id string) (string, error) {
+	var v string
+	err := s.db.QueryRow(ctx, `SELECT COALESCE(portals_instance_id,'') FROM tenants WHERE id=$1`, id).Scan(&v)
+	return v, err
 }
 
 // Delete permanently removes a tenant.

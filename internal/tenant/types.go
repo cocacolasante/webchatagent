@@ -56,6 +56,9 @@ type Tenant struct {
 	PartnerID *string `json:"partner_id,omitempty" db:"partner_id"`
 	ManagedBy string  `json:"managed_by" db:"managed_by"`
 	ClientID  *string `json:"client_id,omitempty" db:"client_id"`
+
+	// Blueprint Command billing
+	PortalsInstanceID string `json:"portalsInstanceId,omitempty" db:"portals_instance_id"`
 }
 
 // SchedulerConfig holds provider-specific scheduling configuration.
@@ -116,6 +119,7 @@ type CreateTenantRequest struct {
 	PartnerID *string `json:"partner_id,omitempty"`
 	ManagedBy string  `json:"managed_by,omitempty"`
 	ClientID  *string `json:"client_id,omitempty"`
+	PortalsInstanceID string `json:"portalsInstanceId,omitempty"`
 }
 
 // UpdateTenantRequest is the payload for updating a tenant.

@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/blueprintautomation/blueprint-chat/internal/api/middleware"
+	"github.com/blueprintautomation/blueprint-chat/internal/billing"
 	"github.com/blueprintautomation/blueprint-chat/internal/tenant"
 	"go.uber.org/zap"
 )
@@ -15,12 +17,13 @@ import (
 type TenantsHandler struct {
 	service     *tenant.Service
 	provisioner *tenant.Provisioner
+	billing     *billing.TenantLimitClient
 	log         *zap.Logger
 }
 
 // NewTenantsHandler creates a new TenantsHandler.
-func NewTenantsHandler(svc *tenant.Service, prov *tenant.Provisioner, log *zap.Logger) *TenantsHandler {
-	return &TenantsHandler{service: svc, provisioner: prov, log: log}
+func NewTenantsHandler(svc *tenant.Service, prov *tenant.Provisioner, log *zap.Logger, billingClient *billing.TenantLimitClient) *TenantsHandler {
+	return &TenantsHandler{service: svc, provisioner: prov, billing: billingClient, log: log}
 }
 
 // Create handles POST /api/admin/tenants.
@@ -31,12 +34,19 @@ func (h *TenantsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.billing.CheckTenantAllowed(r.Context(), req.PortalsInstanceID) {
+		http.Error(w, `{"error":"tenant limit reached"}`, 402)
+		return
+	}
+
 	result, err := h.provisioner.Provision(r.Context(), req)
 	if err != nil {
 		h.log.Error("provision tenant", zap.Error(err))
 		http.Error(w, `{"error":"failed to create tenant"}`, http.StatusInternalServerError)
 		return
 	}
+
+	go h.billing.IncrementTenantCount(context.Background(), req.PortalsInstanceID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -97,11 +107,15 @@ func (h *TenantsHandler) Update(w http.ResponseWriter, r *http.Request) {
 func (h *TenantsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
+	instanceID, _ := h.service.GetPortalsInstanceID(r.Context(), id)
+
 	if err := h.service.Delete(r.Context(), id); err != nil {
 		h.log.Error("delete tenant", zap.Error(err))
 		http.Error(w, `{"error":"failed to delete tenant"}`, http.StatusInternalServerError)
 		return
 	}
+
+	go h.billing.DecrementTenantCount(context.Background(), instanceID)
 
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -40,7 +40,11 @@ interface TimeSlot {
 (function BlueprintChat() {
   'use strict';
 
-  const scriptEl = document.currentScript as HTMLScriptElement | null;
+  // document.currentScript is null for async/defer scripts — fall back to querying by attribute
+  const scriptEl = (
+    document.currentScript ||
+    document.querySelector('script[data-tenant-id]')
+  ) as HTMLScriptElement | null;
   const TENANT_ID = scriptEl?.getAttribute('data-tenant-id') || '';
   const POSITION = (scriptEl?.getAttribute('data-position') || 'bottom-right') as 'bottom-right' | 'bottom-left';
   const API_BASE = scriptEl?.getAttribute('data-api-base') || 'https://chat.blueprintautomation.tech';

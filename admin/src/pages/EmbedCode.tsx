@@ -26,7 +26,7 @@ export default function EmbedCode() {
   if (loading) return <div className="p-8 text-gray-400">Loading...</div>;
   if (!tenant) return <div className="p-8 text-gray-400">Tenant not found.</div>;
 
-  const embedCode = `<!-- Blueprint Chat — powered by Blueprint Automation -->\n<script src="${API_BASE}/widget.js" data-tenant-id="${tenant.id}" data-position="${tenant.position || 'bottom-right'}" async></script>`;
+  const embedCode = `<!-- Blueprint Chat — powered by Blueprint Automation -->\n<script src="${API_BASE}/widget.js" data-tenant-id="${tenant.id}" data-api-base="${API_BASE}" data-position="${tenant.position || 'bottom-right'}" async></script>`;
 
   function copy() {
     navigator.clipboard.writeText(embedCode);

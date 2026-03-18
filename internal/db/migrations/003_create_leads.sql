@@ -17,5 +17,5 @@ CREATE TABLE IF NOT EXISTS leads (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_dedup ON leads(tenant_id, email, date_trunc('day', created_at));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_dedup ON leads(tenant_id, email, date_trunc('day', created_at AT TIME ZONE 'UTC'));
 CREATE INDEX IF NOT EXISTS idx_leads_tenant ON leads(tenant_id);

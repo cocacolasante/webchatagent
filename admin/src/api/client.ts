@@ -1,10 +1,10 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '';
-const ADMIN_KEY = import.meta.env.VITE_ADMIN_KEY || localStorage.getItem('bp-admin-key') || '';
 
 function headers(): HeadersInit {
+  const key = import.meta.env.VITE_ADMIN_KEY || localStorage.getItem('bp-admin-key') || '';
   return {
     'Content-Type': 'application/json',
-    'X-Blueprint-Admin-Key': ADMIN_KEY,
+    'X-Blueprint-Admin-Key': key,
   };
 }
 

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blueprint-chat-api
+  namespace: blueprint-chat
+  labels:
+    app: blueprint-chat-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: blueprint-chat-api
+  template:
+    metadata:
+      labels:
+        app: blueprint-chat-api
+    spec:
+      imagePullSecrets:
+      - name: ghcr-secret
+      containers:
+      - name: blueprint-chat-api
+        image: ghcr.io/cocacolasante/blueprint-chat-api:latest
+        ports:
+        - containerPort: 8080
+        envFrom:
+        - configMapRef:
+            name: blueprint-chat-config
+        - secretRef:
+            name: blueprint-chat-secrets
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 30
+          failureThreshold: 3

@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: blueprint-chat-ingress
+  namespace: blueprint-chat
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+  - hosts:
+    - chat-api.blueprintautomation.tech
+    secretName: blueprint-chat-api-tls
+  rules:
+  - host: chat-api.blueprintautomation.tech
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: blueprint-chat-api
+            port:
+              number: 8080

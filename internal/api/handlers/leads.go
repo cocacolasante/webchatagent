@@ -6,18 +6,20 @@ import (
 
 	mw "github.com/blueprintautomation/blueprint-chat/internal/api/middleware"
 	"github.com/blueprintautomation/blueprint-chat/internal/leads"
+	"github.com/blueprintautomation/blueprint-chat/internal/tenant"
 	"go.uber.org/zap"
 )
 
 // LeadsHandler handles lead capture requests.
 type LeadsHandler struct {
-	service *leads.Service
-	log     *zap.Logger
+	service    *leads.Service
+	tenantsSvc *tenant.Service
+	log        *zap.Logger
 }
 
 // NewLeadsHandler creates a new LeadsHandler.
-func NewLeadsHandler(service *leads.Service, log *zap.Logger) *LeadsHandler {
-	return &LeadsHandler{service: service, log: log}
+func NewLeadsHandler(service *leads.Service, tenantsSvc *tenant.Service, log *zap.Logger) *LeadsHandler {
+	return &LeadsHandler{service: service, tenantsSvc: tenantsSvc, log: log}
 }
 
 // Capture handles POST /api/leads — captures a lead from the widget form.
@@ -63,6 +65,15 @@ func (h *LeadsHandler) List(w http.ResponseWriter, r *http.Request) {
 	if tenantID == "" {
 		http.Error(w, `{"error":"tenant ID required"}`, http.StatusBadRequest)
 		return
+	}
+
+	// Partner scope check: verify partner owns this tenant
+	if partnerID, scoped := mw.GetPartnerScope(r.Context()); scoped {
+		t, err := h.tenantsSvc.GetByID(r.Context(), tenantID)
+		if err != nil || t.PartnerID == nil || *t.PartnerID != partnerID {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
 	}
 
 	leadsList, err := h.service.List(r.Context(), tenantID, 50, 0)

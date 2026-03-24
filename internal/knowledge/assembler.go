@@ -114,7 +114,13 @@ func (a *Assembler) assemble(bizInfo BusinessInfo, kb KnowledgeBase) string {
 	if len(kb.Documents) > 0 {
 		sb.WriteString("\n## Additional Knowledge\n")
 		for _, doc := range kb.Documents {
-			sb.WriteString(doc)
+			if doc.Title != "" {
+				sb.WriteString(fmt.Sprintf("### %s\n", doc.Title))
+			}
+			if doc.URL != "" {
+				sb.WriteString(fmt.Sprintf("Source: %s\n", doc.URL))
+			}
+			sb.WriteString(doc.Content)
 			sb.WriteString("\n\n")
 		}
 	}

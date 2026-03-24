@@ -197,8 +197,8 @@ func (s *Service) Create(ctx context.Context, req CreateTenantRequest) (*Tenant,
 			lead_capture_enabled, lead_form_config, lead_webhook_url, lead_notify_email,
 			discord_webhook_url,
 			partner_id, managed_by, client_id,
-			portals_instance_id
-		) VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+			portals_instance_id, product_instance_id
+		) VALUES ($1,$2,$3,true,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
 		RETURNING id`,
 		apiKey, req.Name, plan,
 		botName, req.SchedulerConfig.APIKey, primaryColor, greeting, position,
@@ -207,7 +207,7 @@ func (s *Service) Create(ctx context.Context, req CreateTenantRequest) (*Tenant,
 		req.LeadCaptureEnabled, leadFormJSON, req.LeadWebhookURL, req.LeadNotifyEmail,
 		req.DiscordWebhookURL,
 		req.PartnerID, managedBy, req.ClientID,
-		req.PortalsInstanceID,
+		req.PortalsInstanceID, nullableString(req.ProductInstanceID),
 	).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("insert tenant: %w", err)
@@ -266,6 +266,12 @@ func (s *Service) GetPortalsInstanceID(ctx context.Context, id string) (string, 
 // Delete permanently removes a tenant.
 func (s *Service) Delete(ctx context.Context, id string) error {
 	_, err := s.db.Exec(ctx, `DELETE FROM tenants WHERE id = $1`, id)
+	return err
+}
+
+// SetActive sets the is_active flag on a tenant.
+func (s *Service) SetActive(ctx context.Context, id string, active bool) error {
+	_, err := s.db.Exec(ctx, "UPDATE tenants SET is_active = $2, updated_at = NOW() WHERE id = $1", id, active)
 	return err
 }
 
@@ -351,6 +357,15 @@ func defaultStr(s, def string) string {
 		return def
 	}
 	return s
+}
+
+// nullableString returns nil if s is empty, otherwise a pointer to s.
+// Used for optional UUID foreign key columns.
+func nullableString(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // rowScanner is implemented by both pgx.Row and pgx.Rows.

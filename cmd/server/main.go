@@ -92,6 +92,7 @@ func main() {
 	tenantSvc := tenant.NewService(pgPool, cfg.EncryptionKey, log)
 	tenantProv := tenant.NewProvisioner(tenantSvc, cfg.BaseURL)
 	billingClient := billing.NewTenantLimitClient(cfg.PortalsURL, cfg.BPAInternalKey)
+	instanceSvc := tenant.NewInstanceService(pgPool)
 
 	emailSender := notification.NewEmailSender(
 		cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass,
@@ -105,26 +106,30 @@ func main() {
 	rateLimiter := mw.NewRateLimiter(redisClient, log)
 
 	// Initialize handlers
-	tenantsHandler := handlers.NewTenantsHandler(tenantSvc, tenantProv, log, billingClient)
+	tenantsHandler := handlers.NewTenantsHandler(tenantSvc, tenantProv, log, billingClient, instanceSvc)
+	instancesHandler := handlers.NewInstancesHandler(instanceSvc, log)
 	chatHandler := handlers.NewChatHandler(chatEngine, cfg.EncryptionKey, log)
-	leadsHandler := handlers.NewLeadsHandler(leadSvc, log)
+	leadsHandler := handlers.NewLeadsHandler(leadSvc, tenantSvc, log)
 	bookingHandler := handlers.NewBookingHandler(cfg.CalComAPIBase, cfg.CalendlyAPIBase, cfg.EncryptionKey, log)
 	widgetHandler := handlers.NewWidgetHandler(cfg.WidgetBundlePath, log)
-	healthHandler := handlers.NewHealthHandler(pgPool, redisClient)
+	healthHandler := handlers.NewHealthHandler(pgPool, redisClient, instanceSvc)
+	googleOAuthHandler := handlers.NewGoogleOAuthHandler(tenantSvc, redisClient, cfg, log)
 
 	// Build router
 	router := api.NewRouter(api.RouterDeps{
-		TenantService:   tenantSvc,
-		TenantHandler:   tenantsHandler,
-		ChatHandler:     chatHandler,
-		LeadsHandler:    leadsHandler,
-		BookingHandler:  bookingHandler,
-		WidgetHandler:   widgetHandler,
-		HealthHandler:   healthHandler,
-		RateLimiter:     rateLimiter,
-		AdminKey:        cfg.AdminKey,
-		RateLimitPerMin: cfg.RateLimitPerMin,
-		Log:             log,
+		TenantService:      tenantSvc,
+		TenantHandler:      tenantsHandler,
+		InstancesHandler:   instancesHandler,
+		ChatHandler:        chatHandler,
+		LeadsHandler:       leadsHandler,
+		BookingHandler:     bookingHandler,
+		WidgetHandler:      widgetHandler,
+		HealthHandler:      healthHandler,
+		GoogleOAuthHandler: googleOAuthHandler,
+		RateLimiter:        rateLimiter,
+		AdminKey:           cfg.AdminKey,
+		RateLimitPerMin:    cfg.RateLimitPerMin,
+		Log:                log,
 	})
 
 	// Start HTTP server

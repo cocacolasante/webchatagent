@@ -33,9 +33,16 @@ type FAQ struct {
 	Answer   string `json:"answer"`
 }
 
+// Document is a rich knowledge document with a title, optional URL, and content.
+type Document struct {
+	Title   string `json:"title"`
+	URL     string `json:"url,omitempty"`
+	Content string `json:"content"`
+}
+
 // KnowledgeBase is the full knowledge configuration for a tenant.
 type KnowledgeBase struct {
-	FAQs               []FAQ    `json:"faqs"`
-	CustomInstructions string   `json:"customInstructions"`
-	Documents          []string `json:"documents"` // plain text chunks
+	FAQs               []FAQ      `json:"faqs"`
+	CustomInstructions string     `json:"customInstructions"`
+	Documents          []Document `json:"documents"`
 }

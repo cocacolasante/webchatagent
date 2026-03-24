@@ -47,7 +47,7 @@ interface TimeSlot {
   ) as HTMLScriptElement | null;
   const TENANT_ID = scriptEl?.getAttribute('data-tenant-id') || '';
   const POSITION = (scriptEl?.getAttribute('data-position') || 'bottom-right') as 'bottom-right' | 'bottom-left';
-  const API_BASE = scriptEl?.getAttribute('data-api-base') || 'https://chat.blueprintautomation.tech';
+  const API_BASE = scriptEl?.getAttribute('data-api-base') || 'https://chat-api.blueprintautomation.tech';
 
   if (!TENANT_ID) {
     console.warn('[Blueprint Chat] Missing data-tenant-id attribute');
@@ -61,6 +61,7 @@ interface TimeSlot {
   let currentAbortController: AbortController | null = null;
 
   // DOM references
+  let shadowRoot: ShadowRoot | null = null;
   let bubble: HTMLElement | null = null;
   let panel: HTMLElement | null = null;
   let messagesContainer: HTMLElement | null = null;
@@ -68,18 +69,30 @@ interface TimeSlot {
   let sendBtn: HTMLButtonElement | null = null;
   let typingIndicator: HTMLElement | null = null;
 
-  // ── CSS injection ────────────────────────────────────────────────────────────
+  // ── Shadow DOM + CSS injection ───────────────────────────────────────────────
 
-  function injectCSS(primaryColor: string): void {
+  function createShadowHost(): ShadowRoot {
+    const host = document.createElement('div');
+    host.setAttribute('id', 'bp-chat-root');
+    // Zero-size fixed anchor — children use their own position:fixed inside shadow
+    host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;z-index:2147483640;overflow:visible;pointer-events:none;';
+    document.body.appendChild(host);
+    return host.attachShadow({ mode: 'open' });
+  }
+
+  function injectCSS(root: ShadowRoot, primaryColor: string): void {
     const style = document.createElement('style');
-    style.textContent = widgetCSS;
-    style.setAttribute('data-bp-chat', '1');
-    document.head.appendChild(style);
+    // Normalize common host-page resets that bleed into injected elements
+    style.textContent = `
+      *, *::before, *::after { box-sizing: border-box; }
+      ${widgetCSS}
+    `;
+    root.appendChild(style);
 
-    // Inject CSS custom property for primary color
+    // Primary color as :host custom property — stays inside shadow, never leaks
     const colorStyle = document.createElement('style');
-    colorStyle.textContent = `:root { --bp-primary: ${primaryColor}; }`;
-    document.head.appendChild(colorStyle);
+    colorStyle.textContent = `:host { --bp-primary: ${primaryColor}; }`;
+    root.appendChild(colorStyle);
   }
 
   // ── API calls ────────────────────────────────────────────────────────────────
@@ -449,14 +462,16 @@ interface TimeSlot {
     bubble = document.createElement('button');
     bubble.className = `bp-chat-bubble bp-chat-bubble--${cfg.position}`;
     bubble.setAttribute('aria-label', `Chat with ${cfg.botName}`);
+    bubble.style.pointerEvents = 'auto';
     bubble.innerHTML = `<svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg>`;
     bubble.addEventListener('click', togglePanel);
-    document.body.appendChild(bubble);
+    shadowRoot!.appendChild(bubble);
   }
 
   function renderPanel(cfg: WidgetConfig): void {
     panel = document.createElement('div');
     panel.className = `bp-chat-panel bp-chat-panel--${cfg.position} bp-chat-panel--hidden`;
+    panel.style.pointerEvents = 'auto';
     panel.innerHTML = `
       <div class="bp-chat-header">
         <div class="bp-chat-header-avatar">
@@ -494,7 +509,7 @@ interface TimeSlot {
     });
     inputEl?.addEventListener('input', () => autoResize(inputEl!));
 
-    document.body.appendChild(panel);
+    shadowRoot!.appendChild(panel);
   }
 
   function autoResize(el: HTMLTextAreaElement): void {
@@ -548,7 +563,8 @@ interface TimeSlot {
       return;
     }
 
-    injectCSS(config.primaryColor);
+    shadowRoot = createShadowHost();
+    injectCSS(shadowRoot, config.primaryColor);
     renderBubble(config);
     renderPanel(config);
   }

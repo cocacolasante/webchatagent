@@ -95,7 +95,7 @@ func (e *Engine) Stream(ctx context.Context, w http.ResponseWriter, t *tenant.Te
 		Model:     anthropic.F(e.model),
 		MaxTokens: anthropic.F(e.maxTokens),
 		System: anthropic.F([]anthropic.TextBlockParam{
-			{Text: anthropic.F(systemPrompt)},
+			{Type: anthropic.F(anthropic.TextBlockParamTypeText), Text: anthropic.F(systemPrompt)},
 		}),
 		Messages: anthropic.F(messages),
 	})

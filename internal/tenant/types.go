@@ -63,10 +63,11 @@ type Tenant struct {
 
 // SchedulerConfig holds provider-specific scheduling configuration.
 type SchedulerConfig struct {
-	APIKey      string `json:"apiKey"`
-	EventTypeID string `json:"eventTypeId"`
-	Username    string `json:"username,omitempty"` // Calendly
-	CalendarID  string `json:"calendarId,omitempty"` // Google
+	APIKey       string `json:"apiKey"`
+	RefreshToken string `json:"refreshToken,omitempty"` // Google OAuth refresh token
+	EventTypeID  string `json:"eventTypeId"`
+	Username     string `json:"username,omitempty"`   // Calendly
+	CalendarID   string `json:"calendarId,omitempty"` // Google
 }
 
 // LeadFormConfig defines the lead capture form settings.
@@ -120,6 +121,7 @@ type CreateTenantRequest struct {
 	ManagedBy string  `json:"managed_by,omitempty"`
 	ClientID  *string `json:"client_id,omitempty"`
 	PortalsInstanceID string `json:"portalsInstanceId,omitempty"`
+	ProductInstanceID string `json:"productInstanceId,omitempty"`
 }
 
 // UpdateTenantRequest is the payload for updating a tenant.

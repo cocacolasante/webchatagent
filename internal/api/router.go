@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/blueprintautomation/blueprint-chat/internal/api/handlers"
 	mw "github.com/blueprintautomation/blueprint-chat/internal/api/middleware"
@@ -13,17 +14,19 @@ import (
 
 // RouterDeps holds all dependencies needed to build the router.
 type RouterDeps struct {
-	TenantService   *tenant.Service
-	TenantHandler   *handlers.TenantsHandler
-	ChatHandler     *handlers.ChatHandler
-	LeadsHandler    *handlers.LeadsHandler
-	BookingHandler  *handlers.BookingHandler
-	WidgetHandler   *handlers.WidgetHandler
-	HealthHandler   *handlers.HealthHandler
-	RateLimiter     *mw.RateLimiter
-	AdminKey        string
-	RateLimitPerMin int
-	Log             *zap.Logger
+	TenantService      *tenant.Service
+	TenantHandler      *handlers.TenantsHandler
+	InstancesHandler   *handlers.InstancesHandler
+	ChatHandler        *handlers.ChatHandler
+	LeadsHandler       *handlers.LeadsHandler
+	BookingHandler     *handlers.BookingHandler
+	WidgetHandler      *handlers.WidgetHandler
+	HealthHandler      *handlers.HealthHandler
+	GoogleOAuthHandler *handlers.GoogleOAuthHandler
+	RateLimiter        *mw.RateLimiter
+	AdminKey           string
+	RateLimitPerMin    int
+	Log                *zap.Logger
 }
 
 // NewRouter builds and returns the chi router with all routes configured.
@@ -39,6 +42,22 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 	// Health check (no auth)
 	r.Get("/api/health", deps.HealthHandler.Health)
+
+	// Admin dashboard SPA — served at /admin/
+	adminFS := http.Dir("./admin-ui")
+	r.Get("/admin", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/", http.StatusMovedPermanently)
+	})
+	r.Handle("/admin/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/admin")
+		f, err := adminFS.Open(path)
+		if err != nil {
+			http.ServeFile(w, r, "./admin-ui/index.html")
+			return
+		}
+		f.Close()
+		http.StripPrefix("/admin", http.FileServer(adminFS)).ServeHTTP(w, r)
+	}))
 
 	// Widget bundle (public)
 	r.Get("/widget.js", deps.WidgetHandler.ServeWidget)
@@ -64,12 +83,32 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Post("/api/booking/create", deps.BookingHandler.CreateBooking)
 	})
 
+	// Google OAuth callback (public — Google redirects here after consent)
+	if deps.GoogleOAuthHandler != nil {
+		r.Get("/api/admin/oauth/google/callback", deps.GoogleOAuthHandler.Callback)
+	}
+
 	// Admin endpoints (require admin key)
 	r.Group(func(r chi.Router) {
 		r.Use(mw.AdminAuthMiddleware(deps.AdminKey))
 		r.Use(mw.PartnerScopeMiddleware)
 
 		r.Route("/api/admin", func(r chi.Router) {
+			// Instance management
+			r.Get("/instances", deps.InstancesHandler.List)
+			r.Post("/instances", deps.InstancesHandler.Create)
+
+			// Auth verification (used by admin dashboard auto-login)
+			r.Get("/verify", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Write([]byte(`{"ok":true}`))
+			})
+
+			// Google Calendar OAuth start (initiates redirect to Google)
+			if deps.GoogleOAuthHandler != nil {
+				r.Get("/oauth/google/start", deps.GoogleOAuthHandler.StartOAuth)
+			}
+
 			// Tenant CRUD
 			r.Post("/tenants", deps.TenantHandler.Create)
 			r.Get("/tenants", deps.TenantHandler.List)
@@ -77,6 +116,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Put("/tenants/{id}", deps.TenantHandler.Update)
 			r.Delete("/tenants/{id}", deps.TenantHandler.Delete)
 			r.Post("/tenants/{id}/rotate-key", deps.TenantHandler.RotateKey)
+			r.Post("/tenants/{id}/suspend", deps.TenantHandler.Suspend)
+			r.Post("/tenants/{id}/unsuspend", deps.TenantHandler.Unsuspend)
 			r.Post("/tenants/{id}/knowledge", deps.TenantHandler.UpdateKnowledge)
 
 			// Tenant data

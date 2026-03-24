@@ -36,9 +36,11 @@ type Config struct {
 	EncryptionKey string
 
 	// Scheduler
-	DefaultScheduler string
-	CalComAPIBase    string
-	CalendlyAPIBase  string
+	DefaultScheduler   string
+	CalComAPIBase      string
+	CalendlyAPIBase    string
+	GoogleClientID     string
+	GoogleClientSecret string
 
 	// Email
 	SMTPHost          string
@@ -83,6 +85,8 @@ func Load() (*Config, error) {
 		DefaultScheduler:      getEnv("DEFAULT_SCHEDULER", "calcom"),
 		CalComAPIBase:         getEnv("CALCOM_API_BASE", "https://api.cal.com/v1"),
 		CalendlyAPIBase:       getEnv("CALENDLY_API_BASE", "https://api.calendly.com"),
+		GoogleClientID:        getEnv("GOOGLE_CLIENT_ID", ""),
+		GoogleClientSecret:    getEnv("GOOGLE_CLIENT_SECRET", ""),
 		SMTPHost:              getEnv("SMTP_HOST", ""),
 		SMTPPort:              getEnvInt("SMTP_PORT", 587),
 		SMTPUser:              getEnv("SMTP_USER", ""),

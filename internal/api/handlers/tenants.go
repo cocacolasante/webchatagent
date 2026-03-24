@@ -18,12 +18,13 @@ type TenantsHandler struct {
 	service     *tenant.Service
 	provisioner *tenant.Provisioner
 	billing     *billing.TenantLimitClient
+	instanceSvc *tenant.InstanceService
 	log         *zap.Logger
 }
 
 // NewTenantsHandler creates a new TenantsHandler.
-func NewTenantsHandler(svc *tenant.Service, prov *tenant.Provisioner, log *zap.Logger, billingClient *billing.TenantLimitClient) *TenantsHandler {
-	return &TenantsHandler{service: svc, provisioner: prov, billing: billingClient, log: log}
+func NewTenantsHandler(svc *tenant.Service, prov *tenant.Provisioner, log *zap.Logger, billingClient *billing.TenantLimitClient, instanceSvc *tenant.InstanceService) *TenantsHandler {
+	return &TenantsHandler{service: svc, provisioner: prov, billing: billingClient, instanceSvc: instanceSvc, log: log}
 }
 
 // Create handles POST /api/admin/tenants.
@@ -34,10 +35,48 @@ func (h *TenantsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Stamp partner_id when called with a partner key
+	if partnerID, scoped := middleware.GetPartnerScope(r.Context()); scoped {
+		req.PartnerID = &partnerID
+	}
+
 	if !h.billing.CheckTenantAllowed(r.Context(), req.PortalsInstanceID) {
 		http.Error(w, `{"error":"tenant limit reached"}`, 402)
 		return
 	}
+
+	// Determine product instance
+	var inst *tenant.ProductInstance
+	var err error
+	if req.ProductInstanceID != "" {
+		inst, err = h.instanceSvc.GetByID(r.Context(), req.ProductInstanceID)
+		if err != nil {
+			http.Error(w, `{"error":"product instance not found"}`, http.StatusBadRequest)
+			return
+		}
+	} else {
+		inst, err = h.instanceSvc.EnsureDefault(r.Context(), req.PortalsInstanceID, req.PortalsInstanceID)
+		if err != nil {
+			h.log.Error("resolve product instance", zap.Error(err))
+			http.Error(w, `{"error":"failed to resolve product instance"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Enforce 15-tenant cap
+	if inst.TenantCount >= tenant.MaxTenantsPerInstance {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":         "tenant_limit_reached",
+			"message":       "This instance has reached the maximum of 15 tenants. Provision a second instance to add more.",
+			"current_count": inst.TenantCount,
+			"max_allowed":   tenant.MaxTenantsPerInstance,
+		})
+		return
+	}
+
+	req.ProductInstanceID = inst.ID
 
 	result, err := h.provisioner.Provision(r.Context(), req)
 	if err != nil {
@@ -53,9 +92,29 @@ func (h *TenantsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(result)
 }
 
+// checkPartnerOwns returns true if the caller is not partner-scoped, or if
+// the tenant with the given id belongs to the caller's partner.
+func (h *TenantsHandler) checkPartnerOwns(ctx context.Context, id string) bool {
+	partnerID, scoped := middleware.GetPartnerScope(ctx)
+	if !scoped {
+		return true
+	}
+	t, err := h.service.GetByID(ctx, id)
+	return err == nil && t.PartnerID != nil && *t.PartnerID == partnerID
+}
+
 // List handles GET /api/admin/tenants.
 func (h *TenantsHandler) List(w http.ResponseWriter, r *http.Request) {
-	tenants, err := h.service.List(r.Context())
+	ctx := r.Context()
+	partnerID, scoped := middleware.GetPartnerScope(ctx)
+
+	var tenants []*tenant.Tenant
+	var err error
+	if scoped {
+		tenants, err = h.service.ListByPartner(ctx, partnerID)
+	} else {
+		tenants, err = h.service.List(ctx)
+	}
 	if err != nil {
 		h.log.Error("list tenants", zap.Error(err))
 		http.Error(w, `{"error":"failed to list tenants"}`, http.StatusInternalServerError)
@@ -72,6 +131,10 @@ func (h *TenantsHandler) List(w http.ResponseWriter, r *http.Request) {
 // Get handles GET /api/admin/tenants/:id.
 func (h *TenantsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !h.checkPartnerOwns(r.Context(), id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
 	t, err := h.service.GetByID(r.Context(), id)
 	if err != nil {
 		http.Error(w, `{"error":"tenant not found"}`, http.StatusNotFound)
@@ -85,6 +148,10 @@ func (h *TenantsHandler) Get(w http.ResponseWriter, r *http.Request) {
 // Update handles PUT /api/admin/tenants/:id.
 func (h *TenantsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !h.checkPartnerOwns(r.Context(), id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
 
 	var req tenant.UpdateTenantRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -106,6 +173,10 @@ func (h *TenantsHandler) Update(w http.ResponseWriter, r *http.Request) {
 // Delete handles DELETE /api/admin/tenants/:id.
 func (h *TenantsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !h.checkPartnerOwns(r.Context(), id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
 
 	instanceID, _ := h.service.GetPortalsInstanceID(r.Context(), id)
 
@@ -120,9 +191,43 @@ func (h *TenantsHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Suspend handles POST /api/admin/tenants/:id/suspend.
+func (h *TenantsHandler) Suspend(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !h.checkPartnerOwns(r.Context(), id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if err := h.service.SetActive(r.Context(), id, false); err != nil {
+		h.log.Error("suspend tenant", zap.Error(err))
+		http.Error(w, `{"error":"failed to suspend tenant"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// Unsuspend handles POST /api/admin/tenants/:id/unsuspend.
+func (h *TenantsHandler) Unsuspend(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !h.checkPartnerOwns(r.Context(), id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	if err := h.service.SetActive(r.Context(), id, true); err != nil {
+		h.log.Error("unsuspend tenant", zap.Error(err))
+		http.Error(w, `{"error":"failed to unsuspend tenant"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // RotateKey handles POST /api/admin/tenants/:id/rotate-key.
 func (h *TenantsHandler) RotateKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !h.checkPartnerOwns(r.Context(), id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
 
 	newKey, err := h.service.RotateAPIKey(r.Context(), id)
 	if err != nil {
@@ -182,6 +287,10 @@ func (h *TenantsHandler) GetStats(w http.ResponseWriter, r *http.Request) {
 // UpdateKnowledge handles POST /api/admin/tenants/:id/knowledge.
 func (h *TenantsHandler) UpdateKnowledge(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+	if !h.checkPartnerOwns(r.Context(), id) {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
 
 	// Get current tenant
 	current, err := h.service.GetByID(r.Context(), id)

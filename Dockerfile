@@ -6,7 +6,15 @@ RUN npm install
 COPY widget/ ./
 RUN npm run build
 
-# Stage 2: Build Go server
+# Stage 2: Build admin dashboard
+FROM node:20-alpine AS admin-builder
+WORKDIR /admin
+COPY admin/package*.json ./
+RUN npm install
+COPY admin/ ./
+RUN npm run build
+
+# Stage 3: Build Go server
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
 
@@ -27,8 +35,14 @@ WORKDIR /app
 
 COPY --from=builder /app/blueprint-chat .
 
+# DB migrations
+COPY --from=builder /app/internal/db/migrations ./internal/db/migrations
+
 # Widget dist
 COPY --from=widget-builder /widget/dist ./widget/dist
+
+# Admin dashboard
+COPY --from=admin-builder /admin/dist ./admin-ui
 
 EXPOSE 8080
 

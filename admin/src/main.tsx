@@ -13,10 +13,12 @@ import './index.css';
   const auth = params.get('auth');
   const tenant = params.get('tenant');
   const name = params.get('name');
+  const client = params.get('client');
   if (auth) {
     localStorage.setItem('bp-admin-key', auth);
     if (tenant) localStorage.setItem('bp-tenant-id', tenant);
     if (name) localStorage.setItem('bp-tenant-name', decodeURIComponent(name));
+    if (client) localStorage.setItem('bp-client-id', client);
     window.history.replaceState(null, '', '/admin/');
   }
 })();

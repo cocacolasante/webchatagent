@@ -2,10 +2,13 @@ const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 function headers(): HeadersInit {
   const key = import.meta.env.VITE_ADMIN_KEY || localStorage.getItem('bp-admin-key') || '';
-  return {
+  const h: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Blueprint-Admin-Key': key,
   };
+  const clientId = localStorage.getItem('bp-client-id');
+  if (clientId) h['X-Blueprint-Client-ID'] = clientId;
+  return h;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {

@@ -12,6 +12,7 @@ const (
 	PartnerIDKey    contextKey = "partner_id"
 	CallerTypeKey   contextKey = "caller_type"
 	IsSuperAdminKey contextKey = "is_super_admin"
+	ClientIDScopeKey contextKey = "client_id_scope"
 )
 
 type CallerType string
@@ -24,6 +25,7 @@ const (
 
 // PartnerScopeMiddleware injects partner scope into context based on API key prefix.
 // Key format for partners: bpa_partner_{partnerUUID}_{random}
+// Also reads X-Blueprint-Client-ID header to scope tenant list to a specific portal client.
 func PartnerScopeMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Header.Get("X-Blueprint-Admin-Key")
@@ -51,8 +53,29 @@ func PartnerScopeMiddleware(next http.Handler) http.Handler {
 			ctx = context.WithValue(ctx, CallerTypeKey, CallerRegular)
 		}
 
+		// Client-ID scoping: allows the portal to restrict a shared admin key to a
+		// specific client's tenants. Ignored for super-admin and partner-key callers.
+		if clientID := r.Header.Get("X-Blueprint-Client-ID"); clientID != "" {
+			callerType, _ := ctx.Value(CallerTypeKey).(CallerType)
+			if callerType == CallerRegular {
+				ctx = context.WithValue(ctx, ClientIDScopeKey, clientID)
+			}
+		}
+
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// GetCallerType returns the caller classification for the current request.
+func GetCallerType(ctx context.Context) CallerType {
+	ct, _ := ctx.Value(CallerTypeKey).(CallerType)
+	return ct
+}
+
+// GetClientScope returns (clientID, true) if a client-ID scope is active.
+func GetClientScope(ctx context.Context) (string, bool) {
+	cid, _ := ctx.Value(ClientIDScopeKey).(string)
+	return cid, cid != ""
 }
 
 // GetPartnerScope returns (partnerID, true) if caller is a partner, ("", false) otherwise.

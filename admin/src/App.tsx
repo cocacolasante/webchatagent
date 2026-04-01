@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
@@ -28,6 +28,7 @@ function AutoAuthHandler({ onLogin }: { onLogin: (key: string) => void }) {
     const authKey = params.get('auth');
     const tenantId = params.get('tenant');
     const tenantName = params.get('name') || '';
+    const clientId = params.get('client') || '';
     if (!authKey) { setDone(true); return; }
 
     // Clear hash immediately — key must not sit in the address bar
@@ -39,6 +40,14 @@ function AutoAuthHandler({ onLogin }: { onLogin: (key: string) => void }) {
           onLogin(authKey);
           if (tenantId) localStorage.setItem('bp-tenant-id', tenantId);
           if (tenantName) localStorage.setItem('bp-tenant-name', decodeURIComponent(tenantName));
+          // Only reset client scope when the hash explicitly came with no client
+          // (i.e. this is a direct admin login, not a portal launch missing the param)
+          if (clientId) {
+            localStorage.setItem('bp-client-id', clientId);
+          } else if (!tenantId) {
+            // No tenant context at all → pure admin login, clear any stale client scope
+            localStorage.removeItem('bp-client-id');
+          }
           navigate('/dashboard', { replace: true });
         }
       })

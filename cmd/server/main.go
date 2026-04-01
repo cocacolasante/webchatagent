@@ -106,7 +106,7 @@ func main() {
 	rateLimiter := mw.NewRateLimiter(redisClient, log)
 
 	// Initialize handlers
-	tenantsHandler := handlers.NewTenantsHandler(tenantSvc, tenantProv, log, billingClient, instanceSvc)
+	tenantsHandler := handlers.NewTenantsHandler(tenantSvc, tenantProv, log, billingClient, instanceSvc, assembler)
 	instancesHandler := handlers.NewInstancesHandler(instanceSvc, log)
 	chatHandler := handlers.NewChatHandler(chatEngine, cfg.EncryptionKey, log)
 	leadsHandler := handlers.NewLeadsHandler(leadSvc, tenantSvc, log)

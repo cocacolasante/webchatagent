@@ -9,6 +9,7 @@ import (
 
 	"github.com/blueprintautomation/blueprint-chat/internal/api/middleware"
 	"github.com/blueprintautomation/blueprint-chat/internal/billing"
+	"github.com/blueprintautomation/blueprint-chat/internal/knowledge"
 	"github.com/blueprintautomation/blueprint-chat/internal/tenant"
 	"go.uber.org/zap"
 )
@@ -19,12 +20,13 @@ type TenantsHandler struct {
 	provisioner *tenant.Provisioner
 	billing     *billing.TenantLimitClient
 	instanceSvc *tenant.InstanceService
+	assembler   *knowledge.Assembler
 	log         *zap.Logger
 }
 
 // NewTenantsHandler creates a new TenantsHandler.
-func NewTenantsHandler(svc *tenant.Service, prov *tenant.Provisioner, log *zap.Logger, billingClient *billing.TenantLimitClient, instanceSvc *tenant.InstanceService) *TenantsHandler {
-	return &TenantsHandler{service: svc, provisioner: prov, billing: billingClient, instanceSvc: instanceSvc, log: log}
+func NewTenantsHandler(svc *tenant.Service, prov *tenant.Provisioner, log *zap.Logger, billingClient *billing.TenantLimitClient, instanceSvc *tenant.InstanceService, assembler *knowledge.Assembler) *TenantsHandler {
+	return &TenantsHandler{service: svc, provisioner: prov, billing: billingClient, instanceSvc: instanceSvc, assembler: assembler, log: log}
 }
 
 // Create handles POST /api/admin/tenants.
@@ -40,9 +42,29 @@ func (h *TenantsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		req.PartnerID = &partnerID
 	}
 
+	// Stamp client_id from header scope (takes precedence over body value).
+	if clientID, scoped := middleware.GetClientScope(r.Context()); scoped {
+		req.ClientID = &clientID
+	}
+
+	// Regular callers must have a client_id — either from the header scope above
+	// or from the request body (portals provisioning path). Reject if still unset.
+	if req.ClientID == nil || *req.ClientID == "" {
+		if middleware.GetCallerType(r.Context()) != middleware.CallerBPASuper {
+			http.Error(w, `{"error":"client_id is required"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
 	if !h.billing.CheckTenantAllowed(r.Context(), req.PortalsInstanceID) {
 		http.Error(w, `{"error":"tenant limit reached"}`, 402)
 		return
+	}
+
+	// Resolve client ID string for instance lookup
+	clientIDStr := ""
+	if req.ClientID != nil {
+		clientIDStr = *req.ClientID
 	}
 
 	// Determine product instance
@@ -55,7 +77,7 @@ func (h *TenantsHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		inst, err = h.instanceSvc.EnsureDefault(r.Context(), req.PortalsInstanceID, req.PortalsInstanceID)
+		inst, err = h.instanceSvc.EnsureDefault(r.Context(), clientIDStr, req.PortalsInstanceID)
 		if err != nil {
 			h.log.Error("resolve product instance", zap.Error(err))
 			http.Error(w, `{"error":"failed to resolve product instance"}`, http.StatusInternalServerError)
@@ -106,14 +128,34 @@ func (h *TenantsHandler) checkPartnerOwns(ctx context.Context, id string) bool {
 // List handles GET /api/admin/tenants.
 func (h *TenantsHandler) List(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	partnerID, scoped := middleware.GetPartnerScope(ctx)
+	partnerID, partnerScoped := middleware.GetPartnerScope(ctx)
+
+	// Client scope: prefer header-based (X-Blueprint-Client-ID, set by admin UI),
+	// fall back to ?client_id= query param (used by inter-service API calls).
+	clientID, clientScoped := middleware.GetClientScope(ctx)
+	if !clientScoped {
+		if qp := r.URL.Query().Get("client_id"); qp != "" {
+			clientID = qp
+			clientScoped = true
+		}
+	}
 
 	var tenants []*tenant.Tenant
 	var err error
-	if scoped {
+	switch {
+	case partnerScoped:
 		tenants, err = h.service.ListByPartner(ctx, partnerID)
-	} else {
-		tenants, err = h.service.List(ctx)
+	case clientScoped:
+		tenants, err = h.service.ListByClientID(ctx, clientID)
+	default:
+		// Only BPA super-admin keys may list all tenants without a scope.
+		// Regular admin key callers with no client scope get an empty list —
+		// they must either pass X-Blueprint-Client-ID or ?client_id=.
+		if middleware.GetCallerType(ctx) == middleware.CallerBPASuper {
+			tenants, err = h.service.List(ctx)
+		} else {
+			tenants = []*tenant.Tenant{}
+		}
 	}
 	if err != nil {
 		h.log.Error("list tenants", zap.Error(err))
@@ -164,6 +206,10 @@ func (h *TenantsHandler) Update(w http.ResponseWriter, r *http.Request) {
 		h.log.Error("update tenant", zap.Error(err))
 		http.Error(w, `{"error":"failed to update tenant"}`, http.StatusInternalServerError)
 		return
+	}
+
+	if h.assembler != nil {
+		_ = h.assembler.InvalidateCache(r.Context(), id)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -316,6 +362,10 @@ func (h *TenantsHandler) UpdateKnowledge(w http.ResponseWriter, r *http.Request)
 		h.log.Error("update knowledge", zap.Error(err))
 		http.Error(w, `{"error":"failed to update knowledge base"}`, http.StatusInternalServerError)
 		return
+	}
+
+	if h.assembler != nil {
+		_ = h.assembler.InvalidateCache(r.Context(), id)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

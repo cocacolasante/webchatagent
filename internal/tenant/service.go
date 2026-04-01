@@ -38,7 +38,12 @@ func (s *Service) GetByID(ctx context.Context, id string) (*Tenant, error) {
 		       partner_id, managed_by, client_id
 		FROM tenants WHERE id = $1`, id)
 
-	return scanTenant(row)
+	t, err := scanTenant(row)
+	if err != nil {
+		return nil, err
+	}
+	_ = t.PopulateJSONFields(s.encryptionKey)
+	return t, nil
 }
 
 // GetByAPIKey retrieves a tenant by its API key.
@@ -80,6 +85,7 @@ func (s *Service) List(ctx context.Context) ([]*Tenant, error) {
 		if err != nil {
 			return nil, err
 		}
+		_ = t.PopulateJSONFields(s.encryptionKey)
 		tenants = append(tenants, t)
 	}
 	return tenants, rows.Err()
@@ -108,6 +114,36 @@ func (s *Service) ListByPartner(ctx context.Context, partnerID string) ([]*Tenan
 		if err != nil {
 			return nil, err
 		}
+		_ = t.PopulateJSONFields(s.encryptionKey)
+		tenants = append(tenants, t)
+	}
+	return tenants, rows.Err()
+}
+
+// ListByClientID returns tenants belonging to a specific portal client.
+func (s *Service) ListByClientID(ctx context.Context, clientID string) ([]*Tenant, error) {
+	rows, err := s.db.Query(ctx, `
+		SELECT id, api_key, name, plan, is_active,
+		       bot_name, avatar_url, primary_color, greeting, position,
+		       business_info, knowledge_base,
+		       scheduler_type, scheduler_config,
+		       lead_capture_enabled, lead_form_config, lead_webhook_url, lead_notify_email,
+		       discord_webhook_url, max_messages_per_day, max_messages_per_min,
+		       created_at, updated_at,
+		       partner_id, managed_by, client_id
+		FROM tenants WHERE client_id = $1 ORDER BY created_at DESC`, clientID)
+	if err != nil {
+		return nil, fmt.Errorf("list tenants by client: %w", err)
+	}
+	defer rows.Close()
+
+	var tenants []*Tenant
+	for rows.Next() {
+		t, err := scanTenantRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		_ = t.PopulateJSONFields(s.encryptionKey)
 		tenants = append(tenants, t)
 	}
 	return tenants, rows.Err()

@@ -3,12 +3,14 @@ import { Link, useNavigate } from 'react-router-dom';
 import { api, Tenant, ProvisionResult } from '../api/client';
 
 export default function Tenants() {
+  const clientId = localStorage.getItem('bp-client-id');
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [newTenant, setNewTenant] = useState({ name: '', botName: 'Assistant', primaryColor: '#6C63FF', greeting: 'Hi! How can I help you today?' });
   const [embedResult, setEmbedResult] = useState<ProvisionResult | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -17,12 +19,24 @@ export default function Tenants() {
       .finally(() => setLoading(false));
   }, []);
 
+  async function handleDelete() {
+    if (!deleteTarget) return;
+    try {
+      await api.deleteTenant(deleteTarget.id);
+      setTenants(prev => prev.filter(t => t.id !== deleteTarget.id));
+      setDeleteTarget(null);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Failed to delete');
+    }
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setCreating(true);
     try {
       const result = await api.createTenant({
         ...newTenant,
+        ...(clientId ? { client_id: clientId } : {}),
         leadCaptureEnabled: true,
         leadFormConfig: { fields: ['name', 'email', 'phone'], requiredFields: ['name', 'email'], triggerMessage: "I'd love to connect you with our team!" },
       });
@@ -122,12 +136,36 @@ export default function Tenants() {
                 <td className="px-6 py-4 text-sm text-gray-400">{new Date(t.createdAt).toLocaleDateString()}</td>
                 <td className="px-6 py-4 text-right">
                   <Link to={`/tenants/${t.id}`} className="text-primary-500 hover:text-primary-600 text-sm font-medium">Configure →</Link>
+                  <button
+                    onClick={() => setDeleteTarget(t)}
+                    className="text-red-500 hover:text-red-700 text-sm font-medium ml-3"
+                  >
+                    Delete
+                  </button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Delete Tenant</h3>
+            <p className="text-sm text-gray-600 mb-5">
+              Are you sure you want to delete <strong>{deleteTarget.name}</strong>? This cannot be undone.
+            </p>
+            <div className="flex gap-2">
+              <button onClick={() => setDeleteTarget(null)} className="flex-1 px-4 py-2 text-sm text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200">
+                Cancel
+              </button>
+              <button onClick={handleDelete} className="flex-1 px-4 py-2 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700">
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
